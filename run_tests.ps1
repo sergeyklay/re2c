@@ -60,8 +60,8 @@ $TestBuildDir = ".\test_$(Get-Date -UFormat '%y%m%d%H%M%S')\"
 # TODO: "Get-Location" => "@top_srcdir@"
 $TopSrcDir = Get-Location
 
-Remove-Item -Path $TestBuildDir -Force -Recurse -ErrorAction Ignore
-New-Item -Path . -Name $TestBuildDir -ItemType "directory" | Out-Null
+Remove-Item $TestBuildDir -Force -Recurse -ErrorAction Ignore
+New-Item $TestBuildDir -ItemType "directory" | Out-Null
 
 # preserve directory structure
 # TODO: parse test files from command line like bash does
@@ -69,33 +69,33 @@ Copy-Item -Path "${TopSrcDir}\test\*" -Destination $TestBuildDir -Recurse -Force
 Copy-Item -Path "${TopSrcDir}\examples\*" -Destination $TestBuildDir -Recurse -Force
 
 $Exclude = @(".re", ".c", ".h", ".go", ".inc")
-Get-ChildItem -Path $TestBuildDir -Recurse |
+Get-ChildItem $TestBuildDir -Recurse |
     Where-Object { (-not $_.PSIsContainer) -and ($Exclude -notcontains $_.Extension) } |
         ForEach-Object {
-            Remove-Item -Path $_.FullName -Force -Recurse -ErrorAction Ignore
+            Remove-Item $_.FullName -Force -Recurse -ErrorAction Ignore
         }
 
 # if not a debug build, remove all debug subdirs
 $Re2cOutput = & $Re2c --version
 if ($Re2cOutput -notmatch '(debug)') {
-    Get-ChildItem -Path $TestBuildDir -Recurse |
+    Get-ChildItem $TestBuildDir -Recurse |
         Where-Object { $_.PSIsContainer -eq $true -and $_.Name -match "debug" } |
             ForEach-Object {
-                Remove-Item -Path $_.FullName -Force -Recurse -ErrorAction Ignore
+                Remove-Item $_.FullName -Force -Recurse -ErrorAction Ignore
             }
 }
 
-$Tests = Get-ChildItem -Path $TestBuildDir -Filter *.re -Recurse |
+$Tests = Get-ChildItem $TestBuildDir -Filter *.re -Recurse |
     Sort-Object | ForEach-Object { $_.FullName }
 
 # set include paths, relative to build directory
 $IncPaths = ""
 $CurrentDirectory = Get-Location
-Get-ChildItem -Path $TestBuildDir -Recurse |
+Get-ChildItem $TestBuildDir -Recurse |
     Where-Object { $_.PSIsContainer -eq $true } |
         ForEach-Object {
             Set-Location $TestBuildDir
-            $RelativePath = Resolve-Path -relative $_.FullName
+            $RelativePath = Resolve-Path -Relative $_.FullName
             Set-Location $CurrentDirectory
 
             $IncPaths += " -I " + $RelativePath
@@ -118,22 +118,68 @@ for ($i = 0; $i -lt $Threads; $i++) {
 
 function RunPack {
     param (
-        [Parameter(Mandatory=$true)] [String[]] $Tests,
-        [Parameter(Mandatory=$true)] [String] $LogFile
+        [Parameter(Mandatory=$true)] [PSCustomObject] $JobCtx
     )
 
-    $RanTests = 42
-    $HardErrors = 12
-    $SoftErrors = 3
+    $RanTests = 0
+    $HardErrors = 0
+    $SoftErrors = 0
+    $Start = Get-Date
 
-    Write-Host "[processing test inside the job and write log $LogFile]"
-    Start-Sleep -s 1
+    New-Item $JobCtx.LogFile -ItemType "file" | Out-Null
+
+    $TestsRoot = $JobCtx.TestsRoot.Trim('\') + '\'
+    $RootLength = $TestsRoot.Length
+
+    Write-Output "tests:" | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
+
+    $JobCtx.Tests | ForEach-Object {
+        Set-Location $TestsRoot
+        $StartCurrent = Get-Date
+
+        # remove prefix
+        $outx = $_.Substring($RootLength)
+
+        # generate file extension (.c for C/C++, .go for Go)
+        $ext = if ((Get-Content $outx -First 1) -match "re2go") {"go"} else {"c"}
+        $outy = $outx -replace '^(.*)\.re$', ('$1.' + $ext)
+
+        $switches = (Get-Content $outx -First 1) `
+            -replace 're2go', 're2c --lang go' `
+            -replace '.*re2c (.*)$', '$1' `
+            -replace '\$INPUT', ('"' + $outx + '"') `
+            -replace '\$OUTPUT', ('"' + $outy + '"') `
+            -replace '(--type-header )([^ ]*)', ('$1' + (Split-Path $outx) + '\' + '$2')
+
+        # enable warnings globally
+        $switches = "$switches -W --no-version --no-generation-date"
+
+        # normal tests
+        if (-not $JobCtx.Skeleton) {
+            # TODO: Implement me
+        } else {
+            Remove-Item $outy -Force -ErrorAction Ignore
+
+            $switches = "$switches --skeleton -Werror-undefined-control-flow"
+            $parameters = "$incpaths $switches".Split(" ")
+
+            & $JobCtx.Re2c $parameters 2>"$outy.stderr"
+
+            $EndCurrent = Get-Date
+            Write-Output "    $($JobCtx.Re2c) $incpaths $switches ($(($EndCurrent - $StartCurrent).TotalSeconds))" | Out-File `
+                -Encoding "ASCII" -Append $JobCtx.LogFile
+        }
+    }
 
     # log results
-    New-Item -Path $LogFile -ItemType "file" | Out-Null
-    Write-Output "ran tests:   $RanTests"   | Out-File -Encoding "ASCII" -Append $LogFile
-    Write-Output "hard errors: $HardErrors" | Out-File -Encoding "ASCII" -Append $LogFile
-    Write-Output "soft errors: $SoftErrors" | Out-File -Encoding "ASCII" -Append $LogFile
+    Write-Output "ran tests:   $RanTests"   | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
+    Write-Output "hard errors: $HardErrors" | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
+    Write-Output "soft errors: $SoftErrors" | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
+
+    $End = Get-Date
+
+    Write-Output "time:  $(($End - $Start).TotalSeconds)" | Out-File `
+        -Encoding "ASCII" -Append $JobCtx.LogFile
 }
 
 function CountTests {
@@ -153,13 +199,23 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
     $Log = Join-Path (Resolve-Path .) "$(Get-Date -UFormat '%y%m%d%H%M%S')_${i}.log"
     $AllLogs += $Log
 
+    $JobCtx = New-Object -TypeName psobject
+    $JobCtx | Add-Member -MemberType NoteProperty -Name Tests -Value $Packs[$i]
+    $JobCtx | Add-Member -MemberType NoteProperty -Name IncPaths -Value $IncPaths
+    $JobCtx | Add-Member -MemberType NoteProperty -Name Skeleton -Value $Skeleton
+    $JobCtx | Add-Member -MemberType NoteProperty -Name LogFile -Value $Log
+    $JobCtx | Add-Member -MemberType NoteProperty -Name TestsRoot `
+        -Value (Resolve-Path $TestBuildDir).ToString()
+    $JobCtx | Add-Member -MemberType NoteProperty -Name Re2c `
+        -Value (Resolve-Path $Re2c).ToString()
+
     # Execute the jobs in parallel
-    $Job = Start-Job $Function:RunPack -ArgumentList $Packs[$i], $Log
+    $Job = Start-Job $Function:RunPack -Name "Re2cJob$i" -ArgumentList $JobCtx
     $AllJobs += $Job
 }
 
 # Wait for it all to complete (if not done yet)
-$null = Wait-Job -Job $AllJobs
+Wait-Job -Job $AllJobs -Timeout 60 | Out-Null
 
 # Discard the jobs
 Remove-Job -Job $AllJobs
@@ -172,23 +228,23 @@ for ($i = 0; $i -lt $AllLogs.Count; $i++) {
     
     $Log = $AllLogs[$i]
 
-    $TotalRanTests += CountTests -File $Log -Type "ran tests"
-    $TotalHardErrors += CountTests -File $Log -Type "hard errors"
-    $TotalSoftErrors += CountTests -File $Log -Type "soft errors"
+    $TotalRanTests += CountTests $Log "ran tests"
+    $TotalHardErrors += CountTests $Log "hard errors"
+    $TotalSoftErrors += CountTests $Log "soft errors"
 
-    Remove-Item -Path $Log
+    # Remove-Item $Log -Force -ErrorAction Ignore
 }
 
 # remove directories that are empty or contain only .inc, .h and .go files
-Get-ChildItem -Path $TestBuildDir -Recurse |
+Get-ChildItem $TestBuildDir -Recurse |
     Where-Object { $_.PSIsContainer -eq $true } | Sort-Object -Descending FullName |
         ForEach-Object {
             $Exclude = @(".inc", ".h", ".go", ".inc")
-            $Files = Get-ChildItem -Path $_.FullName -Recurse |
+            $Files = Get-ChildItem $_.FullName -Recurse |
                 Where-Object { (-not $_.PSIsContainer) -and ($Exclude -notcontains $_.Extension) }
 
             if ($Files.Count -eq 0) {
-                Remove-Item -Path $_.FullName -Force -Recurse -ErrorAction Ignore
+                Remove-Item $_.FullName -Force -Recurse -ErrorAction Ignore
             }
         }
 
@@ -204,8 +260,8 @@ Write-Host "-----------------"
 
 if ($TotalHardErrors -gt 0) {
     Write-Host "FAILED"
-    # ExitWithCode -Code 1
+    # ExitWithCode 1
 } else {
     Write-Host "PASSED"
-    # ExitWithCode -Code 0
+    # ExitWithCode 0
 }
