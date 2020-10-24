@@ -53,7 +53,7 @@ if ($null -eq (Get-Command $Re2c -ErrorAction SilentlyContinue)) {
     throw "Cannot find re2c executable (${Re2c})."
 }
 
-Write-Host "Running in ${Threads} thread(s)"
+Write-Output "Running in $Threads thread(s)"
 
 $StartTesing = Get-Date
 $TestBuildDir = ".\test_$(Get-Date -UFormat '%y%m%d%H%M%S')\"
@@ -131,7 +131,7 @@ function RunPack {
     $TestsRoot = $JobCtx.TestsRoot.Trim('\') + '\'
     $RootLength = $TestsRoot.Length
 
-    Write-Output "tests:" | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
+    $JobCtx.Re2c | Add-Content $JobCtx.LogFile
 
     $JobCtx.Tests | ForEach-Object {
         Set-Location $TestsRoot
@@ -147,8 +147,8 @@ function RunPack {
         $switches = (Get-Content $outx -First 1) `
             -replace 're2go', 're2c --lang go' `
             -replace '.*re2c (.*)$', '$1' `
-            -replace '\$INPUT', ('"' + $outx + '"') `
-            -replace '\$OUTPUT', ('"' + $outy + '"') `
+            -replace '\$INPUT', "`"$outx`"" `
+            -replace '\$OUTPUT', "`"$outy`"" `
             -replace '(--type-header )([^ ]*)', ('$1' + (Split-Path $outx) + '\' + '$2')
 
         # enable warnings globally
@@ -161,25 +161,25 @@ function RunPack {
             Remove-Item $outy -Force -ErrorAction Ignore
 
             $switches = "$switches --skeleton -Werror-undefined-control-flow"
-            $parameters = "$incpaths $switches".Split(" ")
+            $parameters = "$($JobCtx.IncPaths) $switches".Split(" ")
 
+            "    $parameters" | Add-Content $JobCtx.LogFile -NoNewline
             & $JobCtx.Re2c $parameters 2>"$outy.stderr"
 
             $EndCurrent = Get-Date
-            Write-Output "    $($JobCtx.Re2c) $incpaths $switches ($(($EndCurrent - $StartCurrent).TotalSeconds))" | Out-File `
-                -Encoding "ASCII" -Append $JobCtx.LogFile
+            $TotalTime = ($EndCurrent - $StartCurrent).TotalSeconds
+            " ($TotalTime)" | Add-Content $JobCtx.LogFile
         }
     }
 
     # log results
-    Write-Output "ran tests:   $RanTests"   | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
-    Write-Output "hard errors: $HardErrors" | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
-    Write-Output "soft errors: $SoftErrors" | Out-File -Encoding "ASCII" -Append $JobCtx.LogFile
+    "ran tests:   $RanTests"   | Add-Content $JobCtx.LogFile
+    "hard errors: $HardErrors" | Add-Content $JobCtx.LogFile
+    "soft errors: $SoftErrors" | Add-Content $JobCtx.LogFile
 
     $End = Get-Date
 
-    Write-Output "time:  $(($End - $Start).TotalSeconds)" | Out-File `
-        -Encoding "ASCII" -Append $JobCtx.LogFile
+    "time:  $(($End - $Start).TotalSeconds)" | Add-Content $JobCtx.LogFile
 }
 
 function CountTests {
@@ -210,7 +210,7 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
         -Value (Resolve-Path $Re2c).ToString()
 
     # Execute the jobs in parallel
-    $Job = Start-Job $Function:RunPack -Name "Re2cJob$i" -ArgumentList $JobCtx
+    $Job = Start-Job $Function:RunPack -Name "re2c-$i" -ArgumentList $JobCtx
     $AllJobs += $Job
 }
 
@@ -225,14 +225,13 @@ $TotalRanTests = 0
 $TotalHardErrors = 0
 $TotalSoftErrors = 0
 for ($i = 0; $i -lt $AllLogs.Count; $i++) {
-    
     $Log = $AllLogs[$i]
 
     $TotalRanTests += CountTests $Log "ran tests"
     $TotalHardErrors += CountTests $Log "hard errors"
     $TotalSoftErrors += CountTests $Log "soft errors"
 
-    # Remove-Item $Log -Force -ErrorAction Ignore
+    # TODO: Remove-Item $Log -Force -ErrorAction Ignore
 }
 
 # remove directories that are empty or contain only .inc, .h and .go files
@@ -249,19 +248,19 @@ Get-ChildItem $TestBuildDir -Recurse |
         }
 
 # report results
-Write-Host "-----------------"
-Write-Host "All:         $($Tests.Count)"
-Write-Host "Ran:         $TotalRanTests"
-Write-Host "Passed:      $($TotalRanTests - $TotalHardErrors - $TotalSoftErrors)"
-Write-Host "Soft errors: $TotalSoftErrors"
-Write-Host "Hard errors: $TotalHardErrors"
-Write-Host "Total time:  $(($EndTesting - $StartTesing).TotalSeconds)"
-Write-Host "-----------------"
+Write-Output "-----------------"
+Write-Output "All:         $($Tests.Count)"
+Write-Output "Ran:         $TotalRanTests"
+Write-Output "Passed:      $($TotalRanTests - $TotalHardErrors - $TotalSoftErrors)"
+Write-Output "Soft errors: $TotalSoftErrors"
+Write-Output "Hard errors: $TotalHardErrors"
+Write-Output "Total time:  $(($EndTesting - $StartTesing).TotalSeconds)"
+Write-Output "-----------------"
 
 if ($TotalHardErrors -gt 0) {
-    Write-Host "FAILED"
-    # ExitWithCode 1
+    Write-Output "FAILED"
+    # TODO: ExitWithCode 1
 } else {
-    Write-Host "PASSED"
-    # ExitWithCode 0
+    Write-Output "PASSED"
+    # TODO: ExitWithCode 0
 }
