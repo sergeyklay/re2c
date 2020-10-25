@@ -1,52 +1,81 @@
 <#
-.SYNOPSIS
-    re2c test script
+    .SYNOPSIS
+        re2c test script.
 
-.DESCRIPTION
-    .
+    .DESCRIPTION
+        A PowerShell wrapper to run re2c tests in parallel.
 
-.PARAMETER Threads
-    Override CPU autodetection and use specified value.
+    .EXAMPLE
+        .\run_tests.ps1 -Skeleton
 
-.PARAMETER Skeleton
-    Run skeleton validation for sources that support it.
+        Run skeleton validation.
 
-.PARAMETER KeepTempFiles
-    Don't delete temporary files after test run.
+    .EXAMPLE
+        .\run_tests.ps1 -Threads 20 -Re2c .\build\re2c.exe
 
-.PARAMETER Re2c
-    Specifies a path to re2c executable.
+        Override CPU autodetection and specify the path to re2c
+        executable.
+
+    .PARAMETER Threads
+        Override CPU autodetection and use specified value.
+
+    .PARAMETER Skeleton
+        Run skeleton validation for sources that support it.
+
+    .PARAMETER KeepTempFiles
+        Don't delete temporary files after test run.
+
+    .PARAMETER Re2c
+        Specifies a path to re2c executable.
 #>
 
 param (
-    [Int16]$Threads = 0,
-    [Switch]$Skeleton = $false,
-    [Switch]$KeepTempFiles = $false,
-    [String]$Re2c=".\re2c.exe"
+    [UInt16]$Threads = 0,
+    [switch]$Skeleton = $false,
+    [switch]$KeepTempFiles = $false,
+    [string]$Re2c=".\re2c.exe"
 )
 
 function DetectCpuCount {
-    if (-not (Test-Path env:CPUS)) {
-        $env:CPUS = (Get-CimInstance -Class 'CIM_Processor').NumberOfLogicalProcessors
-    }
+    <#
+        .SYNOPSIS
+            Get CPU count.
 
-    if (-not $env:CPUS) {
-        $env:CPUS = 1
-    }
+        .DESCRIPTION
+            This function is used to autodetect the number of logical
+            processors by using CIM.
+
+        .EXAMPLE
+            $CPUs = DetectCpuCount
+    #>
+    return (Get-CimInstance -Class 'CIM_Processor').NumberOfLogicalProcessors
 }
 
 function ExitWithCode {
+    <#
+        .SYNOPSIS
+            Stop current PowerShell script with a exit code.
+
+        .DESCRIPTION
+            This function is intended to immediately terminate the current
+            PowerShell script with a particular exit code.
+
+        .EXAMPLE
+            ExitWithCode 1
+
+        .PARAMETER Code
+            Exit code.
+    #>
     param (
-        [Parameter(Mandatory=$true)] [Int] $Code
+        [Parameter(Mandatory=$true)] [UInt16] $Code
     )
 
     $host.SetShouldExit($Code)
     exit $Code
 }
 
-if ($Threads -le 0) {
-    DetectCpuCount
-    $Threads = $env:CPUS
+if ($Threads -eq 0) {
+    $Threads = DetectCpuCount
 }
 
 if ($null -eq (Get-Command $Re2c -ErrorAction SilentlyContinue)) {
@@ -183,14 +212,14 @@ function RunPack {
 }
 
 function CountTests {
-    [OutputType([Int])]
+    [OutputType([uint32])]
     param (
         [Parameter(Mandatory=$true)] [String] $File,
         [Parameter(Mandatory=$true)] [String] $Type
     )
 
     (Get-Content $Log | Select-String -Pattern "(?<=${Type}:\s+)\d+") |
-        ForEach-Object { [Int]$_.Matches[0].Value }
+        ForEach-Object { [UInt32]$_.Matches[0].Value }
 }
 
 $AllLogs = @()
