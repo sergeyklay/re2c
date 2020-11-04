@@ -30,10 +30,10 @@
 #>
 
 param (
-    [UInt16]$Threads = 0,
-    [Switch]$Skeleton = $false,
-    [Switch]$KeepTempFiles = $false,
-    [String]$Re2c=".\re2c.exe"
+    [UInt16] $Threads = 0,
+    [Switch] $Skeleton = $false,
+    [Switch] $KeepTempFiles = $false,
+    [String] $Re2c=".\re2c.exe"
 )
 
 function DetectCpuCount {
@@ -72,6 +72,39 @@ function ExitWithCode {
 
     $host.SetShouldExit($Code)
     exit $Code
+}
+
+function CreatePacks {
+    <#
+        .SYNOPSIS
+            Create test packs for parallel execution.
+
+        .DESCRIPTION
+            This function is intended to split the array of tests into a
+            multidimensional array. Each element of the returned array is an
+            array of tests to run on a single CPU core.
+
+        .PARAMETER Tests
+            Array of tests.
+
+        .PARAMETER Threads
+            Number of CPU cores to use.
+    #>
+    param (
+        [Parameter(Mandatory=$true)] [String[]] $Tests,
+        [Parameter(Mandatory=$true)] [UInt16] $Threads
+    )
+
+    $Packs = @()
+    $TestsPerThread = [math]::Floor($Tests.Count / $Threads + 1)
+
+    for ($i = 0; $i -lt $Threads; $i++) {
+        $j1 = $i * $TestsPerThread
+        $j2 = $j1 + $TestsPerThread - 1
+        $Packs += ,($Tests[$j1..$j2])
+    }
+
+    return $Packs
 }
 
 if ($Threads -eq 0) {
@@ -135,14 +168,6 @@ if ([System.IO.Path]::IsPathRooted($TopSrcDir)) {
     $IncPaths += " -I " + $TopSrcDir
 } else {
     $IncPaths += " -I ..\.\" + $TopSrcDir
-}
-
-$TestsPerThread = [math]::Floor($Tests.Count / $Threads + 1)
-$Packs = @()
-for ($i = 0; $i -lt $Threads; $i++) {
-    $j1 = $i * $TestsPerThread
-    $j2 = $j1 + $TestsPerThread - 1
-    $Packs += ,($Tests[$j1..$j2])
 }
 
 function RunPack {
@@ -222,6 +247,7 @@ function CountTests {
         ForEach-Object { [UInt32]$_.Matches[0].Value }
 }
 
+$Packs = CreatePacks $Tests $Threads
 $AllLogs = @()
 $AllJobs = @()
 for ($i = 0; $i -lt $Packs.Count; $i++) {
