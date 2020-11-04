@@ -242,12 +242,12 @@ function RunPack {
             $switches = "$switches --skeleton -Werror-undefined-control-flow"
             $parameters = "$($JobCtx.IncPaths) $switches".Split(" ")
 
-            "    $parameters" | Add-Content $JobCtx.LogFile -NoNewline
+            "    $parameters | " | Add-Content $JobCtx.LogFile -NoNewline
             & $JobCtx.Re2c $parameters 2>"$outy.stderr"
 
             $EndCurrent = Get-Date
             $TotalTime = ($EndCurrent - $StartCurrent).TotalSeconds
-            " ($TotalTime)" | Add-Content $JobCtx.LogFile
+            " | $TotalTime" | Add-Content $JobCtx.LogFile
         }
     }
 
