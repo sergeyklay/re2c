@@ -21,6 +21,7 @@
 
     .PARAMETER Skeleton
         Run skeleton validation for sources that support it.
+        Only C-sources are supported at this time.
 
     .PARAMETER KeepTempFiles
         Don't delete temporary files after test run.
@@ -159,8 +160,6 @@ if ($null -eq (Get-Command $Re2c -ErrorAction SilentlyContinue)) {
     throw "Cannot find re2c executable (${Re2c})."
 }
 
-Write-Output "Running in $Threads thread(s)"
-
 $StartTesing = Get-Date
 $TestBuildDir = ".\test_$(Get-Date -UFormat '%y%m%d%H%M%S')\"
 # TODO: "Get-Location" => "@top_srcdir@"
@@ -169,12 +168,15 @@ $TopSrcDir = Get-Location
 Remove-Item $TestBuildDir -Force -Recurse -ErrorAction Ignore
 New-Item $TestBuildDir -ItemType "directory" | Out-Null
 
+Write-Output "Copy tests to $TestBuildDir..."
+
 # preserve directory structure
 # TODO: parse test files from command line like bash does
 Copy-Item -Path "${TopSrcDir}\test\*" -Destination $TestBuildDir -Recurse -Force
 Copy-Item -Path "${TopSrcDir}\examples\*" -Destination $TestBuildDir -Recurse -Force
 
 $Exclude = @(".re", ".c", ".h", ".go", ".inc")
+Write-Output "Cleaning up old generated files..."
 Get-ChildItem $TestBuildDir -Recurse |
     Where-Object { (-not $_.PSIsContainer) -and ($Exclude -notcontains $_.Extension) } |
         ForEach-Object {
@@ -184,6 +186,7 @@ Get-ChildItem $TestBuildDir -Recurse |
 # if not a debug build, remove all debug subdirs
 $Re2cOutput = & $Re2c --version
 if ($Re2cOutput -notmatch '(debug)') {
+    Write-Output "Remove all debug subdirs..."
     Get-ChildItem $TestBuildDir -Recurse |
         Where-Object { $_.PSIsContainer -eq $true -and $_.Name -match "debug" } |
             ForEach-Object {
@@ -193,7 +196,6 @@ if ($Re2cOutput -notmatch '(debug)') {
 
 $Tests = Get-ChildItem $TestBuildDir -Filter *.re -Recurse |
     Sort-Object | ForEach-Object { $_.FullName }
-
 
 function RunPack {
     param (
@@ -209,8 +211,6 @@ function RunPack {
 
     $TestsRoot = $JobCtx.TestsRoot.Trim('\') + '\'
     $RootLength = $TestsRoot.Length
-
-    $JobCtx.Re2c | Add-Content $JobCtx.LogFile
 
     $JobCtx.Tests | ForEach-Object {
         Set-Location $TestsRoot
@@ -236,18 +236,20 @@ function RunPack {
         # normal tests
         if (-not $JobCtx.Skeleton) {
             # TODO: Implement me
-        } else {
+        }
+        # skeleton tests (only for C files, other languages are not supported)
+        elseif ($ext.Equals("c")) {
             Remove-Item $outy -Force -ErrorAction Ignore
 
             $switches = "$switches --skeleton -Werror-undefined-control-flow"
             $parameters = "$($JobCtx.IncPaths) $switches".Split(" ")
 
-            "    $parameters | " | Add-Content $JobCtx.LogFile -NoNewline
             & $JobCtx.Re2c $parameters 2>"$outy.stderr"
 
             $EndCurrent = Get-Date
             $TotalTime = ($EndCurrent - $StartCurrent).TotalSeconds
-            " | $TotalTime" | Add-Content $JobCtx.LogFile
+
+            Write-Output "$TotalTime $outx $outy" "$parameters".Trim() "" | Add-Content $JobCtx.LogFile
         }
     }
 
@@ -272,6 +274,8 @@ function CountTests {
         ForEach-Object { [UInt32]$_.Matches[0].Value }
 }
 
+Write-Output "Running test packs in $Threads thread(s)..."
+
 $Packs = CreatePacks $Tests $Threads
 $AllLogs = @()
 $AllJobs = @()
@@ -291,7 +295,7 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
         -Value (Resolve-Path $Re2c).ToString()
 
     # Execute the jobs in parallel
-    $Job = Start-Job $Function:RunPack -Name "re2c-$i" -ArgumentList $JobCtx
+    $Job = Start-Job $Function:RunPack -Name "re2c-test-$i" -ArgumentList $JobCtx
     $AllJobs += $Job
 }
 
@@ -300,6 +304,8 @@ Wait-Job -Job $AllJobs -Timeout 60 | Out-Null
 
 # Discard the jobs
 Remove-Job -Job $AllJobs
+
+Write-Output "Prepare report..." ""
 
 $EndTesting = Get-Date
 $TotalRanTests = 0
