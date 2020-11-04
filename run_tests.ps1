@@ -11,7 +11,7 @@
         Run skeleton validation.
 
     .EXAMPLE
-        .\run_tests.ps1 -Threads 20 -Re2c .\build\re2c.exe
+        .\run_tests.ps1 -Threads 20 -Re2c .\.build_msvc\Debug\re2c.exe
 
         Override CPU autodetection and specify the path to re2c
         executable.
@@ -107,6 +107,50 @@ function CreatePacks {
     return $Packs
 }
 
+function CreateIncludePaths {
+    <#
+        .SYNOPSIS
+            Create include paths, relative to build directory.
+
+        .DESCRIPTION
+            Creates a list of include paths, which are used when searching for
+            include files. All paths in that list will be relative to build
+            directory except TopSrcDir if it was passed in absolute form.
+
+        .PARAMETER TopTestsDir
+            Base tests directory.
+
+        .PARAMETER TopSrcDir
+            Base project directory.
+    #>
+    param (
+        [Parameter(Mandatory=$true)] [String] $TopTestsDir,
+        [Parameter(Mandatory=$true)] [String] $TopSrcDir
+    )
+
+    $Paths = ""
+
+    $CurrentLocation = Get-Location
+    Set-Location $TopTestsDir
+
+    Get-ChildItem . -Recurse |
+            Where-Object { $_.PSIsContainer -eq $true } |
+            ForEach-Object {
+                $RelativePath = Resolve-Path -Relative $_.FullName
+                $Paths += " -I " + $RelativePath
+            }
+
+    Set-Location $CurrentLocation
+
+    if ([System.IO.Path]::IsPathRooted($TopSrcDir)) {
+        $Paths += " -I " + $TopSrcDir
+    } else {
+        $Paths += " -I ..\.\" + $TopSrcDir
+    }
+
+    return $Paths
+}
+
 if ($Threads -eq 0) {
     $Threads = DetectCpuCount
 }
@@ -150,25 +194,6 @@ if ($Re2cOutput -notmatch '(debug)') {
 $Tests = Get-ChildItem $TestBuildDir -Filter *.re -Recurse |
     Sort-Object | ForEach-Object { $_.FullName }
 
-# set include paths, relative to build directory
-$IncPaths = ""
-$CurrentDirectory = Get-Location
-Get-ChildItem $TestBuildDir -Recurse |
-    Where-Object { $_.PSIsContainer -eq $true } |
-        ForEach-Object {
-            Set-Location $TestBuildDir
-            $RelativePath = Resolve-Path -Relative $_.FullName
-            Set-Location $CurrentDirectory
-
-            $IncPaths += " -I " + $RelativePath
-        }
-
-# add path to include directory (if relative, add "..\.\" to step out of test subdirectory)
-if ([System.IO.Path]::IsPathRooted($TopSrcDir)) {
-    $IncPaths += " -I " + $TopSrcDir
-} else {
-    $IncPaths += " -I ..\.\" + $TopSrcDir
-}
 
 function RunPack {
     param (
@@ -256,7 +281,8 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
 
     $JobCtx = New-Object -TypeName psobject
     $JobCtx | Add-Member -MemberType NoteProperty -Name Tests -Value $Packs[$i]
-    $JobCtx | Add-Member -MemberType NoteProperty -Name IncPaths -Value $IncPaths
+    $JobCtx | Add-Member -MemberType NoteProperty -Name IncPaths `
+        -Value (CreateIncludePaths $TestBuildDir $TopSrcDir)
     $JobCtx | Add-Member -MemberType NoteProperty -Name Skeleton -Value $Skeleton
     $JobCtx | Add-Member -MemberType NoteProperty -Name LogFile -Value $Log
     $JobCtx | Add-Member -MemberType NoteProperty -Name TestsRoot `
