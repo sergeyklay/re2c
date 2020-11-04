@@ -31,9 +31,9 @@
 
 param (
     [UInt16]$Threads = 0,
-    [switch]$Skeleton = $false,
-    [switch]$KeepTempFiles = $false,
-    [string]$Re2c=".\re2c.exe"
+    [Switch]$Skeleton = $false,
+    [Switch]$KeepTempFiles = $false,
+    [String]$Re2c=".\re2c.exe"
 )
 
 function DetectCpuCount {
