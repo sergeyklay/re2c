@@ -168,7 +168,7 @@ $TopSrcDir = Get-Location
 Remove-Item $TestBuildDir -Force -Recurse -ErrorAction Ignore
 New-Item $TestBuildDir -ItemType "directory" | Out-Null
 
-Write-Output "Copy tests to $TestBuildDir..."
+Write-Output "Copy tests to $TestBuildDir"
 
 # preserve directory structure
 # TODO: parse test files from command line like bash does
@@ -176,7 +176,7 @@ Copy-Item -Path "${TopSrcDir}\test\*" -Destination $TestBuildDir -Recurse -Force
 Copy-Item -Path "${TopSrcDir}\examples\*" -Destination $TestBuildDir -Recurse -Force
 
 $Exclude = @(".re", ".c", ".h", ".go", ".inc")
-Write-Output "Cleaning up old generated files..."
+Write-Output "Cleaning up old generated files"
 Get-ChildItem $TestBuildDir -Recurse |
     Where-Object { (-not $_.PSIsContainer) -and ($Exclude -notcontains $_.Extension) } |
         ForEach-Object {
@@ -186,7 +186,7 @@ Get-ChildItem $TestBuildDir -Recurse |
 # if not a debug build, remove all debug subdirs
 $Re2cOutput = & $Re2c --version
 if ($Re2cOutput -notmatch '(debug)') {
-    Write-Output "Remove all debug subdirs..."
+    Write-Output "Remove all debug subdirs"
     Get-ChildItem $TestBuildDir -Recurse |
         Where-Object { $_.PSIsContainer -eq $true -and $_.Name -match "debug" } |
             ForEach-Object {
@@ -199,7 +199,7 @@ $Tests = Get-ChildItem $TestBuildDir -Filter *.re -Recurse |
 
 function RunPack {
     param (
-        [Parameter(Mandatory=$true)] [PSCustomObject] $JobCtx
+        [Parameter(Mandatory=$true)] [PSCustomObject] $Context
     )
 
     $RanTests = 0
@@ -207,64 +207,67 @@ function RunPack {
     $SoftErrors = 0
     $Start = Get-Date
 
-    New-Item $JobCtx.LogFile -ItemType "file" | Out-Null
+    New-Item $Context.LogFile -ItemType "file" | Out-Null
 
-    $TestsRoot = $JobCtx.TestsRoot.Trim('\') + '\'
-    $RootLength = $TestsRoot.Length
+    $CurrentLocation = Get-Location
+    Set-Location $Context.TestsRoot
 
-    $JobCtx.Tests | ForEach-Object {
-        Set-Location $TestsRoot
+    $Context.Tests | ForEach-Object {
         $StartCurrent = Get-Date
 
         # remove prefix
-        $outx = $_.Substring($RootLength)
+        $InputFile = $_ -replace [regex]::Escape($Context.TestsRoot.Trim('\')), '.'
+        $InputCommand = Get-Content $InputFile -First 1
+        $Ext = if ((Get-Content $InputFile -First 1) -match "re2go") {"go"} else {"c"}
 
-        # generate file extension (.c for C/C++, .go for Go)
-        $ext = if ((Get-Content $outx -First 1) -match "re2go") {"go"} else {"c"}
-        $outy = $outx -replace '^(.*)\.re$', ('$1.' + $ext)
+        $OutputFile = $InputFile -replace '^(.*)\.re$', ('$1.' + $Ext)
 
-        $switches = (Get-Content $outx -First 1) `
+        $Switches = (Get-Content $InputFile -First 1) `
             -replace 're2go', 're2c --lang go' `
             -replace '.*re2c (.*)$', '$1' `
-            -replace '\$INPUT', "`"$outx`"" `
-            -replace '\$OUTPUT', "`"$outy`"" `
-            -replace '(--type-header )([^ ]*)', ('$1' + (Split-Path $outx) + '\' + '$2')
+            -replace '\$INPUT', "`"$InputFile`"" `
+            -replace '\$OUTPUT', "`"$OutputFile`"" `
+            -replace '(--type-header )([^ ]*)', ('$1' + (Split-Path $InputFile) + '\' + '$2')
 
         # enable warnings globally
-        $switches = "$switches -W --no-version --no-generation-date"
+        $Switches = "$Switches -W --no-version --no-generation-date"
 
         # normal tests
-        if (-not $JobCtx.Skeleton) {
+        if (-not $Context.Skeleton) {
             # TODO: Implement me
         }
         # skeleton tests (only for C files, other languages are not supported)
-        elseif ($ext.Equals("c")) {
-            Remove-Item $outy -Force -ErrorAction Ignore
+        elseif ($Ext.Equals("c")) {
+            Remove-Item $OutputFile -Force -ErrorAction Ignore
 
-            $switches = "$switches --skeleton -Werror-undefined-control-flow"
-            $parameters = "$($JobCtx.IncPaths) $switches".Split(" ")
+            $Switches = "$Switches --skeleton -Werror-undefined-control-flow"
+            $Parameters = "$($Context.IncPaths) $Switches".Split(" ")
 
-            & $JobCtx.Re2c $parameters 2>"$outy.stderr"
+            & $Context.Re2c $Parameters 2>"$OutputFile.stderr"
 
             $EndCurrent = Get-Date
             $TotalTime = ($EndCurrent - $StartCurrent).TotalSeconds
 
-            Write-Output "$TotalTime $outx $outy" "$parameters".Trim() "" | Add-Content $JobCtx.LogFile
+            Write-Output "$TotalTime $InputFile $OutputFile" "$Parameters".Trim() "" | Add-Content $Context.LogFile
+
+            $RanTests++
         }
     }
 
     # log results
-    "ran tests:   $RanTests"   | Add-Content $JobCtx.LogFile
-    "hard errors: $HardErrors" | Add-Content $JobCtx.LogFile
-    "soft errors: $SoftErrors" | Add-Content $JobCtx.LogFile
+    "ran tests:   $RanTests"   | Add-Content $Context.LogFile
+    "hard errors: $HardErrors" | Add-Content $Context.LogFile
+    "soft errors: $SoftErrors" | Add-Content $Context.LogFile
 
     $End = Get-Date
 
-    "time:  $(($End - $Start).TotalSeconds)" | Add-Content $JobCtx.LogFile
+    "time:  $(($End - $Start).TotalSeconds)" | Add-Content $Context.LogFile
+
+    Set-Location $CurrentLocation
 }
 
 function CountTests {
-    [OutputType([uint32])]
+    [OutputType([UInt32])]
     param (
         [Parameter(Mandatory=$true)] [String] $File,
         [Parameter(Mandatory=$true)] [String] $Type
@@ -274,7 +277,7 @@ function CountTests {
         ForEach-Object { [UInt32]$_.Matches[0].Value }
 }
 
-Write-Output "Running test packs in $Threads thread(s)..."
+Write-Output "Running test packs in $Threads thread(s)"
 
 $Packs = CreatePacks $Tests $Threads
 $AllLogs = @()
@@ -283,29 +286,29 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
     $Log = Join-Path (Resolve-Path .) "$(Get-Date -UFormat '%y%m%d%H%M%S')_${i}.log"
     $AllLogs += $Log
 
-    $JobCtx = New-Object -TypeName psobject
-    $JobCtx | Add-Member -MemberType NoteProperty -Name Tests -Value $Packs[$i]
-    $JobCtx | Add-Member -MemberType NoteProperty -Name IncPaths `
+    $Context = New-Object -TypeName psobject
+    $Context | Add-Member -MemberType NoteProperty -Name Tests -Value $Packs[$i]
+    $Context | Add-Member -MemberType NoteProperty -Name IncPaths `
         -Value (CreateIncludePaths $TestBuildDir $TopSrcDir)
-    $JobCtx | Add-Member -MemberType NoteProperty -Name Skeleton -Value $Skeleton
-    $JobCtx | Add-Member -MemberType NoteProperty -Name LogFile -Value $Log
-    $JobCtx | Add-Member -MemberType NoteProperty -Name TestsRoot `
+    $Context | Add-Member -MemberType NoteProperty -Name Skeleton -Value $Skeleton
+    $Context | Add-Member -MemberType NoteProperty -Name LogFile -Value $Log
+    $Context | Add-Member -MemberType NoteProperty -Name TestsRoot `
         -Value (Resolve-Path $TestBuildDir).ToString()
-    $JobCtx | Add-Member -MemberType NoteProperty -Name Re2c `
+    $Context | Add-Member -MemberType NoteProperty -Name Re2c `
         -Value (Resolve-Path $Re2c).ToString()
 
     # Execute the jobs in parallel
-    $Job = Start-Job $Function:RunPack -Name "re2c-test-$i" -ArgumentList $JobCtx
+    $Job = Start-Job $Function:RunPack -Name "re2c-test-$i" -ArgumentList $Context
     $AllJobs += $Job
 }
 
 # Wait for it all to complete (if not done yet)
-Wait-Job -Job $AllJobs -Timeout 60 | Out-Null
+Wait-Job -Job $AllJobs -Timeout 90 | Out-Null
 
 # Discard the jobs
 Remove-Job -Job $AllJobs
 
-Write-Output "Prepare report..." ""
+Write-Output "Prepare report" ""
 
 $EndTesting = Get-Date
 $TotalRanTests = 0
