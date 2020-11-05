@@ -197,6 +197,17 @@ if ($Re2cOutput -notmatch '(debug)') {
 $Tests = Get-ChildItem $TestBuildDir -Filter *.re -Recurse |
     Sort-Object | ForEach-Object { $_.FullName }
 
+# TODO: Implemet me
+function ExecuteProcess {
+    param (
+        [Parameter(Mandatory=$true)] [String] $FilePath,
+        [Parameter(Mandatory=$false)] [String[]] $Arguments,
+        [Parameter(Mandatory=$false)] [String] $ErrorLog
+    )
+
+    & $FilePath $Arguments 2>$ErrorLog
+}
+
 function RunPack {
     param (
         [Parameter(Mandatory=$true)] [PSCustomObject] $Context
@@ -240,14 +251,15 @@ function RunPack {
             Remove-Item $OutputFile -Force -ErrorAction Ignore
 
             $Switches = "$Switches --skeleton -Werror-undefined-control-flow"
-            $Parameters = "$($Context.IncPaths) $Switches".Split(" ")
+            $Arguments = "$($Context.IncPaths) $Switches".Split(" ")
 
-            & $Context.Re2c $Parameters 2>"$OutputFile.stderr"
+            # TODO: ExecuteProcess $Context.Re2c $Arguments "$OutputFile.stderr"
+            & $Context.Re2c $Arguments 2>"$OutputFile.stderr"
 
             $EndCurrent = Get-Date
             $TotalTime = ($EndCurrent - $StartCurrent).TotalSeconds
 
-            Write-Output "$TotalTime $InputFile $OutputFile" "$Parameters".Trim() "" | Add-Content $Context.LogFile
+            Write-Output "$TotalTime $InputFile $OutputFile" "$Arguments".Trim() "" | Add-Content $Context.LogFile
 
             $RanTests++
         }
@@ -297,7 +309,11 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
         -Value (Resolve-Path $Re2c).ToString()
 
     # Execute the jobs in parallel
-    $Job = Start-Job $Function:RunPack -Name "re2c-test-$i" -ArgumentList $Context
+    $Job = Start-ThreadJob $Function:RunPack `
+        -Name "re2c-test-$i" `
+        -ArgumentList $Context `
+        -ThrottleLimit $Threads
+
     $AllJobs += $Job
 }
 
