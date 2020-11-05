@@ -218,11 +218,10 @@ function RunPack {
         # remove prefix
         $InputFile = $_ -replace [regex]::Escape($Context.TestsRoot.Trim('\')), '.'
         $InputCommand = Get-Content $InputFile -First 1
-        $Ext = if ((Get-Content $InputFile -First 1) -match "re2go") {"go"} else {"c"}
-
+        $Ext = if ($InputCommand -match "re2go") {"go"} else {"c"}
         $OutputFile = $InputFile -replace '^(.*)\.re$', ('$1.' + $Ext)
 
-        $Switches = (Get-Content $InputFile -First 1) `
+        $Switches = $InputCommand `
             -replace 're2go', 're2c --lang go' `
             -replace '.*re2c (.*)$', '$1' `
             -replace '\$INPUT', "`"$InputFile`"" `
