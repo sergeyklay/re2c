@@ -318,10 +318,8 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
 }
 
 # Wait for it all to complete (if not done yet)
-Wait-Job -Job $AllJobs -Timeout 90 | Out-Null
-
-# Discard the jobs
-Remove-Job -Job $AllJobs
+# and delete any job after it returns the job results
+$AllJobs | Receive-Job -Wait -AutoRemoveJob
 
 Write-Output "Prepare report" ""
 
