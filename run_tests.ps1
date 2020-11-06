@@ -197,17 +197,6 @@ if ($Re2cOutput -notmatch '(debug)') {
 $Tests = Get-ChildItem $TestBuildDir -Filter *.re -Recurse |
     Sort-Object | ForEach-Object { $_.FullName }
 
-# TODO: Implemet me
-function ExecuteProcess {
-    param (
-        [Parameter(Mandatory=$true)] [String] $FilePath,
-        [Parameter(Mandatory=$false)] [String[]] $Arguments,
-        [Parameter(Mandatory=$false)] [String] $ErrorLog
-    )
-
-    & $FilePath $Arguments 2>$ErrorLog
-}
-
 function RunPack {
     param (
         [Parameter(Mandatory=$true)] [PSCustomObject] $Context
