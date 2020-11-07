@@ -242,8 +242,51 @@ function RunPack {
             $Switches = "$Switches --skeleton -Werror-undefined-control-flow"
             $Arguments = "$($Context.IncPaths) $Switches".Split(" ")
 
-            # TODO: ExecuteProcess $Context.Re2c $Arguments "$OutputFile.stderr"
-            & $Context.Re2c $Arguments 2>"$OutputFile.stderr"
+            # From the shell output:
+            #   This command cannot be run because "RedirectStandardOutput" and "RedirectStandardError"
+            #   are same. Give different inputs and Run your command again.
+            # This is why we use .tmpout and .tmperr here.
+            $Process = Start-Process `
+                -FilePath $Context.Re2c `
+                -ArgumentList $Arguments `
+                -NoNewWindow `
+                -PassThru `
+                -Wait `
+                -RedirectStandardOutput "$OutputFile.tmpout" `
+                -RedirectStandardError "$OutputFile.tmperr"
+
+            $Status = $Process.ExitCode
+            $Process.Close()
+
+            Get-Content "$OutputFile.tmpout", "$OutputFile.tmperr" | Out-File "$OutputFile.stderr" -Append
+
+            switch ($Status) {
+                0 { $Msg = "OK" ; Break }
+                1 { $Msg = "OK (expected re2c error)" ; Break }
+                2 { $Msg = "FAIL (compilation error)" ; Break }
+                3 { $Msg = "FAIL (runtime error)" ; Break }
+                default { $Msg = "FAIL (unknown error)" ; Break }
+            }
+
+            "{0,-25}{1}" -f $Msg, $InputFile.TrimStart(".\") | Write-Output
+
+            # cleanup
+            Remove-Item "$OutputFile.tmpout" -Force -ErrorAction Ignore
+            Remove-Item "$OutputFile.tmperr" -Force -ErrorAction Ignore
+            if ($Status -le 0 -and -not $Context.KeepTempFiles) {
+                $ToClean = @(
+                    $InputFile,
+                    $OutputFile,
+                    "$OutputFile.line*.*",
+                    "$OutputFile.stderr",
+                    "$OutputFile.out"
+                )
+
+                $ToClean | ForEach-Object { Remove-Item $_ -Force -ErrorAction Ignore }
+            }
+
+            if ($Status -gt 0) { $SoftErrors++ }
+            if ($Status -gt 1) { $HardErrors++ }
 
             $EndCurrent = Get-Date
             $TotalTime = ($EndCurrent - $StartCurrent).TotalSeconds
@@ -296,6 +339,7 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
         -Value (Resolve-Path $TestBuildDir).ToString()
     $Context | Add-Member -MemberType NoteProperty -Name Re2c `
         -Value (Resolve-Path $Re2c).ToString()
+    $Context | Add-Member -MemberType NoteProperty -Name KeepTempFiles -Value $KeepTempFiles
 
     # Execute the jobs in parallel
     $Job = Start-ThreadJob $Function:RunPack `
@@ -309,8 +353,6 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
 # Wait for it all to complete (if not done yet)
 # and delete any job after it returns the job results
 $AllJobs | Receive-Job -Wait -AutoRemoveJob
-
-Write-Output "Prepare report" ""
 
 $EndTesting = Get-Date
 $TotalRanTests = 0
