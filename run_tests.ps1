@@ -23,9 +23,6 @@
         Run skeleton validation for sources that support it.
         Only C-sources are supported at this time.
 
-    .PARAMETER KeepTempFiles
-        Don't delete temporary files after test run.
-
     .PARAMETER Re2c
         Specifies a path to re2c executable.
 #>
@@ -33,7 +30,6 @@
 param (
     [UInt16] $Threads = 0,
     [Switch] $Skeleton = $false,
-    [Switch] $KeepTempFiles = $false,
     [String] $Re2c=".\re2c.exe"
 )
 
@@ -252,13 +248,10 @@ function RunPack {
                 -NoNewWindow `
                 -PassThru `
                 -Wait `
-                -RedirectStandardOutput "$OutputFile.tmpout" `
-                -RedirectStandardError "$OutputFile.tmperr"
+                -RedirectStandardError "$OutputFile.stderr"
 
             $Status = $Process.ExitCode
             $Process.Close()
-
-            Get-Content "$OutputFile.tmpout", "$OutputFile.tmperr" | Out-File "$OutputFile.stderr" -Append
 
             switch ($Status) {
                 0 { $Msg = "OK" ; Break }
@@ -271,9 +264,7 @@ function RunPack {
             "{0,-25}{1}" -f $Msg, $InputFile.TrimStart(".\") | Write-Output
 
             # cleanup
-            Remove-Item "$OutputFile.tmpout" -Force -ErrorAction Ignore
-            Remove-Item "$OutputFile.tmperr" -Force -ErrorAction Ignore
-            if ($Status -le 0 -and -not $Context.KeepTempFiles) {
+            if ($Status -le 1) {
                 $ToClean = @(
                     $InputFile,
                     $OutputFile,
@@ -339,7 +330,6 @@ for ($i = 0; $i -lt $Packs.Count; $i++) {
         -Value (Resolve-Path $TestBuildDir).ToString()
     $Context | Add-Member -MemberType NoteProperty -Name Re2c `
         -Value (Resolve-Path $Re2c).ToString()
-    $Context | Add-Member -MemberType NoteProperty -Name KeepTempFiles -Value $KeepTempFiles
 
     # Execute the jobs in parallel
     $Job = Start-ThreadJob $Function:RunPack `
