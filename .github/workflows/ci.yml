@@ -254,5 +254,5 @@ jobs:
 
           # skeleton tests (if enabled)
           if [[ "x${{ matrix.skeleton }}" == "xtrue" ]] ; then
-            ./run_tests.sh --skeleton
+            python run_tests.py --skeleton
           fi
