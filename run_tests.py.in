@@ -90,7 +90,7 @@ def parser_add_options(parser):
         '--valgrind',
         dest='valgrind',
         action='store_true',
-        help='Run ./re2c under valgrind'
+        help='Run .{}re2c under valgrind'.format(os.path.sep)
     )
 
     ogroup.add_argument(
@@ -111,7 +111,7 @@ def parser_add_options(parser):
         '--wine',
         dest='wine',
         action='store_true',
-        help="Run ./re2c.exe under wine"
+        help='Run .{}re2c.exe under wine'.format(os.path.sep)
     )
 
     ogroup.add_argument(
@@ -154,7 +154,8 @@ def parse_args():
                 '|n '
                 '  - run tests in parallel'
                 '|n '
-                '    $ ./%(prog)s'),
+                '    {} .{}%(prog)s'.format('>' if os.name == 'nt' else '$', os.path.sep)
+                ),
     )
 
     parser_add_options(parser)
@@ -525,10 +526,11 @@ def init_process(base_path, skeleton=False, keep_temp_files=False,
     _ctx.incpaths = sum([['-I', str(d)] for d in paths if os.path.isdir(d)], [])
     os.chdir(cwd)
 
+    top_dir = os.path.normpath(TOP_SRCDIR)
     if os.path.isabs(TOP_SRCDIR):
-        _ctx.incpaths += ['-I', f'{TOP_SRCDIR}/include']
+        _ctx.incpaths += ['-I', os.path.join(top_dir, 'include')]
     else:
-        _ctx.incpaths += ['-I', f'../{TOP_SRCDIR}/include']
+        _ctx.incpaths += ['-I', os.path.join('..', top_dir, 'include')]
 
     # Set tools paths
 
@@ -613,7 +615,7 @@ def main():
         total_ran_tests += grep_count(log, r'ran[^\d]+')
         total_hard_errors += grep_count(log, r'hard[^\d]+')
         total_soft_errors += grep_count(log, r'soft[^\d]+')
-        os.remove(log)
+        remove(log)
 
     # remove directories that are empty or contain only .inc, .h and .go files
     for d in filter(lambda x: os.path.isdir(str(x)), Path(test_blddir).rglob('*')):
