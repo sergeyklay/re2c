@@ -138,8 +138,8 @@ def parser_add_positionals(parser):
     )
 
 
-def parse_cli_arguments():
-    """Initialize command line arguments parser."""
+def parse_args():
+    """Initialize command line arguments parser and parse CLI arguments."""
     parser = argparse.ArgumentParser(
         # The argparse module does not provide any option to add a "prolog".
         # When the help is displayed it always start with "usage:".
@@ -573,7 +573,7 @@ def environment_check(valgrind=False, wine=False):
 
 def main():
     """The main function to run tests from the command line."""
-    args = parse_cli_arguments()
+    args = parse_args()
 
     # Check environment
     environment_check(args.valgrind, args.wine)
@@ -581,7 +581,7 @@ def main():
     jobs = abs(args.jobs or 1)
     print(f'Running in {jobs} job(s)')
 
-    if not os.access(_ctx.re2c, os.X_OK):
+    if not _ctx.re2c or not os.access(_ctx.re2c, os.X_OK):
         raise RuntimeError(f'Cannot find re2c executable')
 
     test_blddir = create_tests_tree()
