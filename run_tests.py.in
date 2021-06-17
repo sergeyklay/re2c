@@ -326,9 +326,9 @@ def run_pack(tests_pack):
         # Prepare re2c flags
         switches = re.sub('re2go', 're2c --lang go', head)
         switches = re.sub(r'.*re2c (.*)$', r'\1', switches)
-        switches = re.sub(re.escape('$INPUT'), outx, switches)
-        switches = re.sub(re.escape('$OUTPUT'), outy, switches)
-        switches = re.sub(re.escape('$DEPFILE'), f'{outy}.d', switches)
+        switches = switches.replace('$INPUT', outx)
+        switches = switches.replace('$OUTPUT', outy)
+        switches = switches.replace('$DEPFILE', f'{outy}.d')
         switches = re.sub(
             r'(--type-header )([^ ]*)',
             r'\1' + f'{os.path.dirname(outx)}/' + r'\2',
