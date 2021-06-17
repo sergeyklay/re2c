@@ -190,30 +190,6 @@ def remove(*args, **kwargs):
                 raise
 
 
-def which(name, path=None, flags=os.X_OK):
-    """Locate a program file in the user's path."""
-    result = []
-    exts = filter(None, os.environ.get('PATHEXT', '').split(os.pathsep))
-
-    if path is None:
-        path = os.environ.get("PATH", None)
-
-    if path is None:
-        return []
-
-    for p in path.split(os.pathsep):
-        p = os.path.join(p, name)
-        if os.access(p, flags):
-            result.append(p)
-
-        for e in exts:
-            pext = p + e
-            if os.access(pext, flags):
-                result.append(pext)
-
-    return result
-
-
 def here(*paths):
     """Resolve relative path using the given path parts."""
     return os.path.relpath(os.path.join(*paths))
@@ -556,9 +532,9 @@ def init_process(base_path, skeleton=False, keep_temp_files=False,
 
     # Set tools paths
 
-    _ctx.diff = which('diff')[0]
+    _ctx.diff = shutil.which('diff')
     if valgrind:
-        _ctx.valgrind = which('valgrind')[0]
+        _ctx.valgrind = shutil.which('valgrind')
         _ctx.valgrind_opts = [
             '-q',
             '--track-origins=yes',
@@ -572,25 +548,26 @@ def init_process(base_path, skeleton=False, keep_temp_files=False,
         _ctx.valgrind_opts = []
 
     if wine:
-        _ctx.wine = which('wine')[0]
+        _ctx.wine = shutil.which('wine')
         _ctx.re2c += '.exe'
         # Ignore whitespace at the end of line
         _ctx.diff += ' -b'
     elif os.name == 'nt':
-        # This should find 're2c.exe'
-        _ctx.re2c += which('re2c', path=os.getcwd())[0]
+        # This should find 're2c.exe' in os.getcwd()
+        _ctx.re2c += shutil.which('re2c', path=os.getcwd())
+        # Ignore whitespace at the end of line
         _ctx.diff += ' -b'
 
 
 def environment_check(valgrind=False, wine=False):
     """Check environment and requirements."""
-    if not which('diff'):
+    if not shutil.which('diff'):
         raise RuntimeError("The 'diff' utility is missing from PATH")
 
-    if valgrind and not which('valgrind'):
+    if valgrind and not shutil.which('valgrind'):
         raise RuntimeError("The 'valgrind' tool is missing from the PATH")
 
-    if wine and not which('wine'):
+    if wine and not shutil.which('wine'):
         raise RuntimeError("The 'wine' layer is missing from the PATH")
 
 
@@ -667,14 +644,7 @@ def main():
 
 
 # This should be in the global scope
-try:
-    # Special case for `which('re2c', path=os.getcwd())[0]`
-    # There is no need to raise an error now. We'll check for re2c presence a
-    # bit later in the 'main()' function and raise RuntimeError
-    # (if re2c doesn't exist).
-    _ctx = Context(re2c=which('re2c', path=os.getcwd())[0])
-except IndexError:
-    _ctx = Context(re2c='re2c')
+_ctx = Context(re2c=shutil.which('re2c', path=os.getcwd()))
 
 
 # Run main() when current file is executed by an interpreter.
