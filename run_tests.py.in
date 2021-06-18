@@ -33,6 +33,7 @@ class Context:
     wine: str = ''
     valgrind: str = ''
     valgrind_opts: list = None
+    diff_opts: list = None
 
     # Flags
     skeleton: bool = False
@@ -534,7 +535,7 @@ def init_process(base_path, skeleton=False, keep_temp_files=False,
 
     # Set tools paths
 
-    _ctx.diff = shutil.which('diff')
+    _ctx.valgrind_opts = []
     if valgrind:
         _ctx.valgrind = shutil.which('valgrind')
         _ctx.valgrind_opts = [
@@ -546,19 +547,14 @@ def init_process(base_path, skeleton=False, keep_temp_files=False,
             '--malloc-fill=0xa1',
             '--free-fill=0xa1',
         ]
-    else:
-        _ctx.valgrind_opts = []
+
+    _ctx.diff = shutil.which('diff')
+    if wine or os.name == 'nt':
+        # Ignore whitespace at the end of line
+        _ctx.diff_ots = ['-b']
 
     if wine:
         _ctx.wine = shutil.which('wine')
-        _ctx.re2c += '.exe'
-        # Ignore whitespace at the end of line
-        _ctx.diff += ' -b'
-    elif os.name == 'nt':
-        # This should find 're2c.exe' in os.getcwd()
-        _ctx.re2c += shutil.which('re2c', path=os.getcwd())
-        # Ignore whitespace at the end of line
-        _ctx.diff += ' -b'
 
 
 def environment_check(valgrind=False, wine=False):
@@ -646,7 +642,11 @@ def main():
 
 
 # This should be in the global scope
-_ctx = Context(re2c=shutil.which('re2c', path=os.getcwd()))
+_ctx = Context(
+    # This should find 're2c.exe' for Windows or just 're2c'
+    # for Linux/UNIX under the os.getcwd().
+    re2c=shutil.which('re2c', path=os.getcwd())
+)
 
 
 # Run main() when current file is executed by an interpreter.
