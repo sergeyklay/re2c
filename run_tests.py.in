@@ -18,8 +18,8 @@ from functools import cmp_to_key
 from pathlib import Path
 
 
-# Will be replaced by the real path in the code
-# generation stage. Can be relative or absolute.
+# Will be replaced by the real path at the generation
+# stage. Can be relative or absolute.
 TOP_SRCDIR = '@top_srcdir@'
 
 
@@ -91,7 +91,7 @@ def parser_add_options(parser):
         '--valgrind',
         dest='valgrind',
         action='store_true',
-        help='Run .{}re2c under valgrind'.format(os.path.sep)
+        help=f'Run .{os.path.sep}re2c under valgrind'
     )
 
     ogroup.add_argument(
@@ -112,7 +112,7 @@ def parser_add_options(parser):
         '--wine',
         dest='wine',
         action='store_true',
-        help='Run .{}re2c.exe under wine'.format(os.path.sep)
+        help=f'Run .{os.path.sep}re2c.exe under wine'
     )
 
     ogroup.add_argument(
@@ -155,7 +155,7 @@ def parse_args():
                 '|n '
                 '  - run tests in parallel'
                 '|n '
-                '    {} .{}%(prog)s'.format('>' if os.name == 'nt' else '$', os.path.sep)
+                f'    $ .{os.path.sep}%(prog)s'
                 ),
     )
 
@@ -320,13 +320,13 @@ def run_pack(tests_pack):
         with open(outx, mode='rb') as f:
             head = f.readline().decode('utf-8').strip()
             # generate file extension (.c for C/C++, .go for Go)
-            ext = 'go' if re.search('re2go', head) else 'c'
+            ext = 'go' if 're2go' in head else 'c'
 
         oute = os.path.splitext(outx)
         outy = f'{oute[0]}.{ext if oute[1] == ".re" else oute[1]}'
 
         # Prepare re2c flags
-        switches = re.sub('re2go', 're2c --lang go', head)
+        switches = head.replace('re2go', 're2c --lang go')
         switches = re.sub(r'.*re2c (.*)$', r'\1', switches)
         switches = switches.replace('$INPUT', outx)
         switches = switches.replace('$OUTPUT', outy)
@@ -350,7 +350,7 @@ def run_pack(tests_pack):
 
             # if options contain a header, create directory structure for it
             header = ''
-            if re.search('--type-header', switches):
+            if '--type-header' in switches:
                 header = re.sub(r'.*--type-header ([^ ]*).*', r'\1', switches)
 
             if header:
@@ -392,8 +392,9 @@ def run_pack(tests_pack):
             status = '' if os.path.isfile(orig) else 'MISSING'
             if not status:
                 with open(f'{outy}.diff', mode='wb') as process_out:
+                    args = [_ctx.diff] + _ctx.diff_opts + [orig, outy]
                     process = subprocess.Popen(
-                        [_ctx.diff, orig, outy],
+                        list(filter(None, args)),
                         stdout=process_out,
                         stderr=process_out
                     )
@@ -549,9 +550,10 @@ def init_process(base_path, skeleton=False, keep_temp_files=False,
         ]
 
     _ctx.diff = shutil.which('diff')
+    _ctx.diff_opts = []
     if wine or os.name == 'nt':
         # Ignore whitespace at the end of line
-        _ctx.diff_ots = ['-b']
+        _ctx.diff_opts = ['-b']
 
     if wine:
         _ctx.wine = shutil.which('wine')
@@ -645,7 +647,7 @@ def main():
 _ctx = Context(
     # This should find 're2c.exe' for Windows or just 're2c'
     # for Linux/UNIX under the os.getcwd().
-    re2c=shutil.which('re2c', path=os.getcwd())
+    re2c=abshere(shutil.which('re2c', path=os.getcwd()))
 )
 
 
