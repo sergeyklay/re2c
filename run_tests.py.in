@@ -615,16 +615,17 @@ def main():
         total_soft_errors += grep_count(log, r'soft[^\d]+')
         remove(log)
 
-    # remove directories that are empty or contain only .inc, .h and .go files
-    for d in filter(lambda x: os.path.isdir(str(x)), Path(test_blddir).rglob('*')):
-        exts = ('.inc', '.h', '.go')
-        found = filter(lambda x: not str(x).endswith(exts), Path(d).rglob('*'))
-
-        for f in found:
-            if os.path.isdir(f):
-                shutil.rmtree(f, ignore_errors=True)
-            else:
-                remove(f)
+    # Recursively remove subdirectories that do not contain .re files.
+    # Note that the removed subdirectories are still listed when iterating the
+    # parent directory on bottom-up recursive return, so we have to record all
+    # removed paths in a set and use it to filter subdirectories.
+    removed_subdirs = set()
+    for path, subdirs, files in os.walk(test_blddir, topdown=False):
+        re_files = [f for f in files if str(f).endswith('.re')]
+        subdirs = [d for d in subdirs if os.path.join(path, d) not in removed_subdirs]
+        if len(re_files) == 0 and len(subdirs) == 0:
+            shutil.rmtree(path)
+            removed_subdirs.add(path)
 
     # report results
     print('-----------------')
