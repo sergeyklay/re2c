@@ -144,6 +144,9 @@ jobs:
               ;;
           esac
 
+          # Print kernel version
+          uname -sr
+
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
